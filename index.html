@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>jsSMS KaiOS - Sega Master System &amp; Game Gear Emulator</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+<meta http-equiv="Content-Security-Policy"
+content="
+  default-src 'self' https: data: blob:;
+  script-src 'self' 'unsafe-inline' 'unsafe-eval' https:;
+  style-src 'self' 'unsafe-inline' https:;
+  img-src * data: blob:;
+  frame-src https:;
+  connect-src https:;
+">
+<link rel="stylesheet" href="css/kaios-style.css"> <!-- Optional: for further styling -->
+<style>
+/* Basic KaiOS-like styling */
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #000;
+  color: #fff;
+  font-family: 'Open Sans', sans-serif; /* Standard KaiOS font */
+  overflow: hidden;
+}
+
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  justify-content: space-between;
+}
+
+#emulator {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+}
+
+#screen {
+  background: #000;
+  width: 256px;
+  height: 192px;
+  max-width: 100%;
+  max-height: calc(100vh - 80px); /* Adjust based on softkey bar height */
+  display: none; /* Hide initially, show ROM list first */
+  image-rendering: pixelated; /* Crisp pixels for retro look */
+  -ms-interpolation-mode: nearest-neighbor;
+}
+
+#screen canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+#status {
+  text-align: center;
+  padding: 5px;
+  min-height: 20px;
+  font-size: 0.8em;
+  color: #aaa;
+}
+
+/* ROM List Container */
+#rom-list-container {
+    width: 100%;
+    height: 100%;
+    display: flex; /* Initially shown */
+    flex-direction: column;
+}
+
+#search-box {
+    width: 100%;
+    padding: 5px;
+    box-sizing: border-box;
+}
+
+#search-input {
+    width: 100%;
+    padding: 8px;
+    font-size: 1em;
+    background-color: #333;
+    color: #fff;
+    border: 1px solid #555;
+    box-sizing: border-box;
+}
+
+#romList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  width: 100%;
+  flex-grow: 1;
+  overflow-y: scroll;
+}
+
+#romList li {
+  padding: 8px 15px;
+  border-bottom: 1px solid #333;
+  font-size: 1.1em;
+  color: #fff;
+}
+
+#romList li.rom-group-header {
+  background-color: #222;
+  font-weight: bold;
+  color: #eee;
+}
+
+#romList li.selected {
+  background-color: #007bff; /* KaiOS highlight blue */
+  color: #fff;
+}
+
+/* Softkey Bar */
+.softkey-bar {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px;
+  background-color: #1a1a1a;
+  color: #fff;
+  font-size: 1em;
+  text-transform: uppercase;
+}
+
+.softkey {
+  flex: 1;
+}
+.softkey-left { text-align: left; }
+.softkey-center { text-align: center; }
+.softkey-right { text-align: right; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div id="emulator">
+    <!-- Screen will be created by JS and added here -->
+    <!-- ROM List and Search box are now static in the HTML -->
+    <div id="rom-list-container">
+        <div id="search-box">
+            <input type="text" id="search-input" placeholder="Search ROMs...">
+        </div>
+        <!-- The ROM list (ul) will be created by JS and added inside this container -->
+    </div>
+  </div>
+
+  <div class="softkey-bar">
+    <div id="softkey-left" class="softkey softkey-left"></div>
+    <div id="softkey-center" class="softkey softkey-center"></div>
+    <div id="softkey-right" class="softkey softkey-right"></div>
+  </div>
+</div>
+
+<!-- All JSSMS core scripts -->
+<script src="src/setup.js"></script>
+<script src="src/sms.js"></script>
+<script src="src/utils.js"></script>
+<script src="src/sync-client.js"></script>
+<script src="src/z80.js"></script>
+<script src="src/debugger.js"></script>
+<script src="src/vdp.js"></script>
+<script src="src/psg.js"></script>
+<script src="src/kaios_ui.js"></script> <!-- Our KaiOS UI -->
+<script src="src/keyboard.js"></script>
+<script src="src/ports.js"></script>
+<script src="src/compiler/bytecode.js"></script>
+<script src="src/compiler/parser.js"></script>
+<script src="src/compiler/opcodes-ast.js"></script>
+<script src="src/compiler/opcodes-CB.js"></script>
+<script src="src/compiler/opcodes-DD-FD.js"></script>
+<script src="src/compiler/opcodes-ED.js"></script>
+<script src="src/compiler/opcodes.js"></script>
+<script src="src/compiler/analyzer.js"></script>
+<script src="src/compiler/optimizer.js"></script>
+<script src="src/compiler/generator.js"></script>
+<script src="src/compiler/recompiler.js"></script>
+<script src="lib/esprima.js"></script>
+<script src="lib/escodegen.browser.js"></script>
+
+<script src="init.js"></script>
+</body>
+</html>

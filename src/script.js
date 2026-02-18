@@ -1,0 +1,1 @@
+var sms = new JSSMS();

@@ -1,0 +1,30 @@
+{
+  "name": "JSSMS Kai",
+  "description": "Sega Master System Emulator",
+  "version": "1.0.0",
+  "launch_path": "/index.html",
+  "type": "privileged",
+  "csp": "script-src 'self' 'unsafe-eval'; object-src 'none'",
+  "permissions": {
+    "device-storage:sdcard": { "access": "readonly" },
+    "audio-capture": { "description": "Required for audio output handling" },
+    "spatialnavigation-app-manage": {}
+  },
+  "developer": {
+    "name": "Developer",
+    "url": "http://example.com"
+  },
+  "locales": {
+    "en-US": {
+      "name": "JSSMS Kai",
+      "subtitle": "SMS/GG Emulator",
+      "description": "Sega Master System Emulator for KaiOS"
+    }
+  },
+  "default_locale": "en-US",
+  "icons": {
+    "56": "/icons/icon-56.png",
+    "112": "/icons/icon-112.png"
+  },
+  "fullscreen": "true"
+}
