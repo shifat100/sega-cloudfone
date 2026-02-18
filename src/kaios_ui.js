@@ -163,7 +163,7 @@ JSSMS.KaiOSUI.prototype = {
           }
           evt.preventDefault();
           break;
-        case 'SoftRight':
+        case 'SoftRight': case 'f2':
            if (self.romListContainer.style.display !== 'none') {
             self.openFile();
            } else {
