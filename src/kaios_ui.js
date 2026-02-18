@@ -14,6 +14,40 @@ if (!JSSMS.DummyUI) {
     this.canvasImageData = { data: [] };
   };
 }
+function simulateKeyPress(options) {
+    options = options || {};
+
+    var key = options.key || 'SoftRight';
+    var code = options.code || key;
+    var keyCode = options.keyCode || 2;
+    var delay = options.delay || 80;
+    var target = options.target || document;
+
+    if (!target || typeof target.dispatchEvent !== 'function') {
+        console.error('Invalid target for simulateKey');
+        return;
+    }
+
+    function createEvent(type) {
+        var evt = new KeyboardEvent(type, {
+            key: key,
+            code: code,
+            bubbles: true,
+            cancelable: true
+        });
+
+        Object.defineProperty(evt, 'keyCode', { get: function () { return keyCode; } });
+        Object.defineProperty(evt, 'which', { get: function () { return keyCode; } });
+
+        return evt;
+    }
+
+    target.dispatchEvent(createEvent('keydown'));
+
+    setTimeout(function () {
+        target.dispatchEvent(createEvent('keyup'));
+    }, delay);
+}
 
 /**
  * KaiOS-specific UI implementation.
@@ -50,6 +84,10 @@ JSSMS.KaiOSUI = function(sms) {
 
   this.initUI();
   this.setupEventListeners();
+  window.addEventListener('back', (event) => {
+  event.preventDefault();
+ simulateKeyPress();
+});
 };
 
 JSSMS.KaiOSUI.prototype = {
@@ -108,7 +146,7 @@ JSSMS.KaiOSUI.prototype = {
             evt.preventDefault();
           }
           break;
-        case 'SoftLeft':
+        case 'SoftLeft': case 'Escape':
           if (self.romListContainer.style.display !== 'none') {
              self.shareApp();
           } else {
