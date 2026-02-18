@@ -276,7 +276,7 @@ JSSMS.KaiOSUI.prototype = {
     // Focus search input on load
     this.searchInput.focus();
     
-    this.updateSoftKeys('SHARE', 'SELECT', 'OPEN');
+    this.updateSoftKeys('Search', 'SELECT', 'OPEN');
   },
 
   // Completely rewritten to use .focus()
