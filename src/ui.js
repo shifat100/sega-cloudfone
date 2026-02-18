@@ -1,537 +1,435 @@
 'use strict';
 
 /**
- * Default implementation of UI. Could as well be defined as an interface, to
- * make sure we don't forget anything when implementing it.
- *
+ * 1. Define DummyUI fallback in case ui.js is not loaded.
+ */
+if (!JSSMS.DummyUI) {
+  JSSMS.DummyUI = function(sms) {
+    this.main = sms;
+    this.reset = function() {};
+    this.updateStatus = function() {};
+    this.writeAudio = function() {};
+    this.writeFrame = function() {};
+    this.updateDisassembly = function() {};
+    this.canvasImageData = { data: [] };
+  };
+}
+
+function simulateKeyPress(options) {
+    options = options || {};
+
+    var key = options.key || 'SoftRight';
+    var code = options.code || key;
+    var keyCode = options.keyCode || 2;
+    var delay = options.delay || 80;
+    var target = options.target || document;
+
+    if (!target || typeof target.dispatchEvent !== 'function') {
+        console.error('Invalid target for simulateKey');
+        return;
+    }
+
+    function createEvent(type) {
+        var evt = new KeyboardEvent(type, {
+            key: key,
+            code: code,
+            bubbles: true,
+            cancelable: true
+        });
+
+        Object.defineProperty(evt, 'keyCode', { get: function () { return keyCode; } });
+        Object.defineProperty(evt, 'which', { get: function () { return keyCode; } });
+
+        return evt;
+    }
+
+    target.dispatchEvent(createEvent('keydown'));
+
+    setTimeout(function () {
+        target.dispatchEvent(createEvent('keyup'));
+    }, delay);
+}
+
+/**
+ * KaiOS-specific UI implementation.
  * @constructor
  * @param {JSSMS} sms
  */
-JSSMS.DummyUI = function(sms) {
+JSSMS.KaiOSUI = function(sms) {
   this.main = sms;
-  this.reset = function() {};
-  this.updateStatus = function() {};
-  this.writeAudio = function() {};
-  this.writeFrame = function() {};
-  this.updateDisassembly = function() {};
-  this.canvasImageData = {
-    data: [],
-  };
+  this.roms = {};
+  this.romListElement = null;
+
+  // --- HTML Element References ---
+  this.emulatorRoot = document.getElementById('emulator');
+  this.romListContainer = document.getElementById('rom-list-container');
+  this.searchInput = document.getElementById('search-input');
+  this.softkeyLeft = document.getElementById('softkey-left');
+  this.softkeyCenter = document.getElementById('softkey-center');
+  this.softkeyRight = document.getElementById('softkey-right');
+
+  // These are created dynamically
+  this.screenContainer = null;
+  this.canvas = null;
+  this.canvasContext = null;
+  this.canvasImageData = { data: [] };
+  this.log = null;
+
+  // Check if critical elements exist
+  if (!this.emulatorRoot || !this.romListContainer || !this.searchInput) {
+      console.error("Fatal Error: Could not find essential UI elements in HTML.");
+      alert("UI Error!");
+      return;
+  }
+
+  this.initUI();
+  this.setupEventListeners();
+  
+  window.addEventListener('back', (event) => {
+    event.preventDefault();
+    simulateKeyPress();
+  });
 };
 
-if (window['$']) {
-  /**
-   * @constructor
-   * @param {Object.<string, Object.<string, string>>} roms A list of rom files.
-   */
-  $.fn['JSSMSUI'] = function(roms) {
-    var parent = /** HTMLElement **/ this;
-    var UI = function(sms) {
-      this.main = sms;
+JSSMS.KaiOSUI.prototype = {
+  initUI: function() {
+    // --- Create elements that don't exist in the HTML ---
 
-      // Exit if ran from Opera Mini.
-      if (
-        Object.prototype.toString.call(window['operamini']) ===
-        '[object OperaMini]'
-      ) {
-        $(parent).html(
-          '<div class="alert alert-error"><strong>Oh no!</strong> Your browser can\'t run this emulator. Try the latest version of Firefox, Google Chrome, Opera or Safari!</div>'
-        );
-        return;
-      }
+    // Screen Container
+    this.screenContainer = document.createElement('div');
+    this.screenContainer.id = 'screen';
+    this.emulatorRoot.appendChild(this.screenContainer);
 
-      var self = this;
+    // Canvas
+    this.canvas = document.createElement('canvas');
+    this.canvas.width = 256; // SMS_WIDTH
+    this.canvas.height = 192; // SMS_HEIGHT
+    this.canvasContext = this.canvas.getContext('2d', { alpha: false });
+    this.canvasContext.imageSmoothingEnabled = false; // For crisp pixels
+    this.canvasImageData = this.canvasContext.getImageData(0, 0, 256, 192);
+    this.screenContainer.appendChild(this.canvas);
 
-      // Create UI
-      var root = $('<div></div>');
-      var screenContainer = $('<div id="screen"></div>');
-      var gamepadContainer = $(
-        '<div class="gamepad"><div class="direction"><div class="up"></div><div class="right"></div><div class="left"></div><div class="down"></div></div><div class="buttons"><div class="start"></div><div class="fire1"></div><div class="fire2"></div></div></div>'
-      );
-      var controls = $('<div id="controls"></div>');
+    // Status Log
+    this.log = document.createElement('div');
+    this.log.id = 'status';
+    this.screenContainer.appendChild(this.log); 
 
-      // General settings
-      /**
-       * Contains the fullscreen API prefix or false if not supported.
-       * @type {string|boolean}
-       */
-      var fullscreenSupport = JSSMS.Utils.getPrefix([
-        'fullscreenEnabled',
-        'mozFullScreenEnabled',
-        'webkitCancelFullScreen',
-      ]);
+    // ROM List UL element
+    this.romListElement = document.createElement('ul');
+    this.romListElement.id = 'romList';
+    this.romListContainer.appendChild(this.romListElement);
 
-      var requestAnimationFramePrefix = JSSMS.Utils.getPrefix(
-        [
-          'requestAnimationFrame',
-          'msRequestAnimationFrame',
-          'mozRequestAnimationFrame',
-          'webkitRequestAnimationFrame',
-        ],
-        window
-      );
+    this.updateSoftKeys('', '', '');
+  },
 
-      var i;
+  setupEventListeners: function() {
+    var self = this;
 
-      if (requestAnimationFramePrefix) {
-        this.requestAnimationFrame = window[requestAnimationFramePrefix].bind(
-          window
-        );
-      } else {
-        var lastTime = 0;
-        this.requestAnimationFrame = function(callback) {
-          var currTime = JSSMS.Utils.getTimestamp();
-          var timeToCall = Math.max(0, 1000 / 60 - (currTime - lastTime));
-          window.setTimeout(function() {
-            lastTime = JSSMS.Utils.getTimestamp();
-            callback();
-          }, timeToCall);
-        };
-      }
+    this.searchInput.addEventListener('input', function() {
+        self.filterRoms(this.value);
+    });
 
-      // Screen
-      this.screen = $(
-        '<canvas width=' +
-          SMS_WIDTH +
-          ' height=' +
-          SMS_HEIGHT +
-          ' moz-opaque></canvas>'
-      );
-      this.canvasContext = this.screen[0].getContext('2d', {
-        alpha: false, // See http://wiki.whatwg.org/wiki/CanvasOpaque
-      });
+    // Make sure search input is focusable and focused by default
+    this.searchInput.setAttribute('tabindex', '0');
 
-      // Nearest-neighbour rendering for scaling pixel-art.
-      this.canvasContext['webkitImageSmoothingEnabled'] = false;
-      this.canvasContext['mozImageSmoothingEnabled'] = false;
-      this.canvasContext['imageSmoothingEnabled'] = false;
-
-      if (!this.canvasContext.getImageData) {
-        $(parent).html(
-          '<div class="alert alert-error"><strong>Oh no!</strong> Your browser doesn\'t support writing pixels directly to the <code>&lt;canvas&gt;</code> tag. Try the latest version of Firefox, Google Chrome, Opera or Safari!</div>'
-        );
-        return;
-      }
-
-      this.canvasImageData = this.canvasContext.getImageData(
-        0,
-        0,
-        SMS_WIDTH,
-        SMS_HEIGHT
-      );
-
-      // Gamepad
-      this.gamepad = {
-        up: P1_KEY_UP,
-        down: P1_KEY_DOWN,
-        left: P1_KEY_LEFT,
-        right: P1_KEY_RIGHT,
-        fire1: P1_KEY_FIRE1,
-        fire2: P1_KEY_FIRE2,
-      };
-      var startButton = $('.start', gamepadContainer);
-
-      // Rom selector
-      this.romContainer = $('<div id="romSelector"></div>');
-      this.romSelect = $('<select></select>').change(function() {
-        self.loadROM();
-      });
-
-      // Buttons
-      this.buttons = Object.create(null);
-
-      this.buttons.start = $(
-        '<input type="button" value="Start" class="btn btn-primary" disabled="disabled">'
-      ).click(function() {
-        if (!self.main.isRunning) {
-          self.main.start();
-          self.buttons.start.attr('value', 'Pause');
-        } else {
-          self.main.stop();
-          self.updateStatus('Paused');
-          self.buttons.start.attr('value', 'Start');
-        }
-      });
-
-      this.buttons.reset = $(
-        '<input type="button" value="Reset" class="btn" disabled="disabled">'
-      ).click(function() {
-        if (!self.main.reloadRom()) {
-          $(this).attr('disabled', 'disabled');
-          return;
-        }
-        self.main.reset();
-        self.main.vdp.forceFullRedraw();
-        self.main.start();
-      });
-
-      if (ENABLE_DEBUGGER) {
-        this.dissambler = $('<div id="dissambler"></div>');
-        $(parent).after(this.dissambler);
-        this.buttons.nextStep = $(
-          '<input type="button" value="Next step" class="btn" disabled="disabled">'
-        ).click(function() {
-          self.main.nextStep();
-        });
-      }
-
-      if (this.main.soundEnabled) {
-        this.buttons.sound = $(
-          '<input type="button" value="Enable sound" class="btn" disabled="disabled">'
-        ).click(function() {
-          if (self.main.soundEnabled) {
-            self.main.soundEnabled = false;
-            self.buttons.sound.attr('value', 'Enable sound');
-          } else {
-            self.main.soundEnabled = true;
-            self.buttons.sound.attr('value', 'Disable sound');
-          }
-        });
-      }
-
-      if (fullscreenSupport) {
-        // @todo Add an exit fullScreen button.
-        this.buttons.fullscreen = $(
-          '<input type="button" value="Go fullscreen" class="btn">'
-        ).click(function() {
-          var screen = /** @type {HTMLDivElement} */ (screenContainer[0]);
-
-          if (screen.requestFullscreen) {
-            screen.requestFullscreen();
-          } else if (screen.mozRequestFullScreen) {
-            screen.mozRequestFullScreen();
-          } else {
-            screen.webkitRequestFullScreen(Element.ALLOW_KEYBOARD_INPUT);
-          }
-        });
-      } else {
-        this.zoomed = false;
-
-        this.buttons.zoom = $(
-          '<input type="button" value="Zoom in" class="btn hidden-phone">'
-        ).click(function() {
-          if (self.zoomed) {
-            self.screen.animate(
-              {
-                width: SMS_WIDTH + 'px',
-                height: SMS_HEIGHT + 'px',
-              },
-              function() {
-                $(this).removeAttr('style');
-              }
-            );
-            self.buttons.zoom.attr('value', 'Zoom in');
-          } else {
-            self.screen.animate({
-              width: SMS_WIDTH * 2 + 'px',
-              height: SMS_HEIGHT * 2 + 'px',
-            });
-            self.buttons.zoom.attr('value', 'Zoom out');
-          }
-          self.zoomed = !self.zoomed;
-        });
-      }
-
-      // Software buttons - touch
-      gamepadContainer.on('touchstart touchmove', function(evt) {
-        evt.preventDefault();
-
-        self.main.keyboard.controller1 = 0xff;
-
-        var touches = evt.originalEvent.touches;
-
-        for (var i = 0; i < touches.length; i++) {
-          var target = document.elementFromPoint(
-            touches[i].clientX,
-            touches[i].clientY
-          );
-
-          if (!target) {
-            continue;
-          }
-
-          var className = target.className;
-
-          if (!className || !self.gamepad[className]) {
-            continue;
-          }
-
-          var key = self.gamepad[className];
-          self.main.keyboard.controller1 &= ~key;
-        }
-      });
-
-      gamepadContainer.on('touchend', function(evt) {
-        evt.preventDefault();
-
-        if (evt.originalEvent.touches.length === 0) {
-          self.main.keyboard.controller1 = 0xff;
-        }
-      });
-
-      // Software buttons - click
-      function mouseDown(evt) {
-        var className = this.className;
-        var key = self.gamepad[className];
-        self.main.keyboard.controller1 &= ~key;
-        evt.preventDefault();
-      }
-
-      function mouseUp(evt) {
-        var className = this.className;
-        var key = self.gamepad[className];
-        self.main.keyboard.controller1 |= key;
-        evt.preventDefault();
-      }
-
-      for (i in this.gamepad) {
-        $('.' + i, gamepadContainer)
-          .mousedown(mouseDown)
-          .mouseup(mouseUp);
-      }
-
-      startButton
-        .on('mousedown touchstart', function(evt) {
-          if (self.main.is_sms) {
-            self.main.pause_button = true; // Pause
-          } else {
-            self.main.keyboard.ggstart &= ~0x80; // Start
-          }
-          evt.preventDefault();
-        })
-        .on('mouseup touchend', function(evt) {
-          if (!self.main.is_sms) {
-            self.main.keyboard.ggstart |= 0x80; // Start
-          }
-          evt.preventDefault();
-        });
-
-      // Keyboard
-      $(document)
-        .bind('keydown', function(evt) {
+    document.addEventListener('keydown', function(evt) {
+      // Game Controls
+      if (self.main.isRunning) {
           self.main.keyboard.keydown(evt);
-          //console.log(self.main.keyboard.controller1, self.main.keyboard.ggstart);
-        })
-        .bind('keyup', function(evt) {
-          self.main.keyboard.keyup(evt);
-          //console.log(self.main.keyboard.controller1, self.main.keyboard.ggstart);
-        });
-
-      // Append buttons to controls div.
-      for (i in this.buttons) {
-        this.buttons[i].appendTo(controls);
+          // If running, standard keys shouldn't trigger UI navigation unless caught below
       }
 
-      this.log = $('<div id="status"></div>');
+      var activeEl = document.activeElement;
 
-      this.screen.appendTo(screenContainer);
-      gamepadContainer.appendTo(screenContainer);
-      screenContainer.appendTo(root);
-      this.romContainer.appendTo(root);
-      controls.appendTo(root);
-      this.log.appendTo(root);
-      root.appendTo($(parent));
+      switch (evt.key) {
+        case 'ArrowUp':
+          if (self.romListContainer.style.display !== 'none') {
+            evt.preventDefault();
+            self.moveFocus(-1);
+          }
+          break;
 
-      if (roms !== undefined) {
-        this.setRoms(roms);
+        case 'ArrowDown':
+          if (self.romListContainer.style.display !== 'none') {
+            evt.preventDefault();
+            self.moveFocus(1);
+          }
+          break;
+
+        case 'SoftLeft': 
+        case 'Escape': // Standard browser back behavior mapped to SoftLeft logic here
+          if (self.romListContainer.style.display !== 'none') {
+             self.searchInput.focus();
+             // Prevent default back behavior if we just moved focus
+             evt.preventDefault();
+          } else {
+             self.togglePause();
+             evt.preventDefault();
+          }
+          break;
+
+        case 'Enter':
+          if (self.romListContainer.style.display !== 'none') {
+            evt.preventDefault();
+            // Action depends on what is focused
+            if (activeEl === self.searchInput) {
+                // If search is focused and Enter is pressed, move focus to list
+                self.moveFocus(1); 
+            } else if (activeEl.classList.contains('rom-item')) {
+                // If a ROM item is focused, load it
+                activeEl.click();
+            }
+          }
+          break;
+
+        case 'SoftRight':
+           if (self.romListContainer.style.display !== 'none') {
+            self.openFile();
+           } else {
+            self.showRomList(); 
+           }
+          evt.preventDefault();
+          break;
+      }
+    });
+
+    document.addEventListener('keyup', function(evt) {
+        if (self.main.isRunning) {
+            self.main.keyboard.keyup(evt);
+        }
+    });
+  },
+
+  updateSoftKeys: function(left, center, right) {
+    this.softkeyLeft.textContent = left;
+    this.softkeyCenter.textContent = center;
+    this.softkeyRight.textContent = right;
+  },
+
+  setRoms: function(roms) {
+    this.roms = roms;
+    this.renderRomList(this.roms);
+    this.showRomList();
+  },
+
+  renderRomList: function(romsToRender) {
+    var self = this;
+    this.romListElement.innerHTML = ''; // Clear existing list items
+
+    for (var groupName in romsToRender) {
+      if (romsToRender.hasOwnProperty(groupName)) {
+        var groupHeader = document.createElement('li');
+        groupHeader.className = 'rom-group-header';
+        groupHeader.textContent = groupName;
+        // Headers are not focusable (no tabindex)
+        this.romListElement.appendChild(groupHeader);
+
+        romsToRender[groupName].forEach(function(rom) {
+          var listItem = document.createElement('li');
+          listItem.textContent = rom.name;
+          listItem.dataset.url = rom.url;
+          listItem.className = 'rom-item';
+          
+          // CRITICAL FIX: Make items focusable via keyboard/d-pad
+          listItem.setAttribute('tabindex', '0'); 
+
+          // Handle "Enter" click logic directly on the element
+          listItem.addEventListener('click', function() {
+              self.loadROMFromURL(this.dataset.url);
+          });
+
+          // Optional: Auto-scroll when focused
+          listItem.addEventListener('focus', function() {
+              this.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          });
+
+          self.romListElement.appendChild(listItem);
+        });
+      }
+    }
+  },
+
+  filterRoms: function(searchTerm) {
+    var lowerCaseSearchTerm = searchTerm.toLowerCase();
+    var filteredRoms = {};
+
+    if (!lowerCaseSearchTerm) {
+        filteredRoms = this.roms;
+    } else {
+        for (var groupName in this.roms) {
+            var matchingRoms = this.roms[groupName].filter(function(rom) {
+                return rom.name.toLowerCase().includes(lowerCaseSearchTerm);
+            });
+            if (matchingRoms.length > 0) {
+                filteredRoms[groupName] = matchingRoms;
+            }
+        }
+    }
+    this.renderRomList(filteredRoms);
+  },
+
+  showRomList: function() {
+    this.main.stop();
+    this.screenContainer.style.display = 'none';
+    this.romListContainer.style.display = 'flex';
+    
+    // Focus search input on load
+    this.searchInput.focus();
+    
+    this.updateSoftKeys('SHARE', 'SELECT', 'OPEN');
+  },
+
+  // Completely rewritten to use .focus()
+  moveFocus: function(direction) {
+    var active = document.activeElement;
+    
+    // Get all focusable ROM items
+    var items = Array.from(this.romListElement.querySelectorAll('.rom-item'));
+    
+    // If list is empty, stay on search
+    if (items.length === 0) {
+        this.searchInput.focus();
+        return;
+    }
+
+    var index = items.indexOf(active);
+
+    if (active === this.searchInput) {
+        if (direction > 0) {
+            // Down from search -> First item
+            items[0].focus();
+        }
+        // Up from search -> stays on search (or wrap to bottom if desired)
+    } else if (index !== -1) {
+        // Currently on a list item
+        var newIndex = index + direction;
+
+        if (newIndex < 0) {
+            // Up from first item -> Go to Search
+            this.searchInput.focus();
+        } else if (newIndex >= items.length) {
+            // Down from last item -> Loop to top or Search? Let's go to Search
+            this.searchInput.focus();
+        } else {
+            // Move to next item
+            items[newIndex].focus();
+        }
+    } else {
+        // Focus was lost somewhere else, reset to search
+        this.searchInput.focus();
+    }
+  },
+
+  loadROMFromURL: function(url) {
+    var self = this;
+    this.updateStatus('Downloading...');
+    this.romListContainer.style.display = 'none';
+    this.screenContainer.style.display = 'block';
+
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', url, true);
+    xhr.overrideMimeType('text/plain; charset=x-user-defined');
+    xhr.onload = function() {
+      if (xhr.status === 200) {
+        self.startEmulatorWithRom(xhr.responseText, url);
+      } else {
+        self.updateStatus('Error: ' + xhr.status);
+        self.showRomList();
       }
     };
+    xhr.onerror = function() {
+        self.updateStatus('Download failed.');
+        self.showRomList();
+    };
+    xhr.send();
+  },
 
-    UI.prototype = {
-      reset: function() {
-        this.screen[0].width = SMS_WIDTH;
-        this.screen[0].height = SMS_HEIGHT;
+  loadROMFromFile: function(blob) {
+      var self = this;
+      var reader = new FileReader();
+      reader.onload = function(e) {
+          self.romListContainer.style.display = 'none';
+          self.screenContainer.style.display = 'block';
+          self.startEmulatorWithRom(e.target.result, blob.name);
+      };
+      reader.readAsBinaryString(blob);
+  },
 
-        this.log.empty();
+  startEmulatorWithRom: function(romData, romName) {
+      this.main.readRomDirectly(romData, romName);
+      this.main.reset();
+      this.main.vdp.forceFullRedraw();
+      this.main.start();
+      this.updateStatus('');
+      this.updateSoftKeys('PAUSE', '', 'LIST');
+  },
 
-        if (ENABLE_DEBUGGER) {
-          this.dissambler.empty();
-        }
-      },
+  openFile: function() {
+      var self = this;
+      if (typeof MozActivity === 'undefined') {
+          self.updateStatus('Web Activities not supported');
+          return;
+      }
+      try {
+          var activity = new MozActivity({
+              name: 'pick',
+              data: {
+                  type: ['application/octet-stream', 'application/zip', '*/*'],
+                  nocrop: true
+              }
+          });
+          activity.onsuccess = function() {
+              if (this.result.blob) {
+                  self.loadROMFromFile(this.result.blob);
+              }
+          };
+          activity.onerror = function() {
+              self.updateStatus('File pick error: ' + this.error.name);
+          };
+      } catch (e) {
+          self.updateStatus('Error opening file picker.');
+      }
+  },
 
-      /**
-       * Given an map of roms, build a <select> tag to allow game selection.
-       *
-       * @param {Object.<Array.<string>>} roms The list of roms.
-       */
-      setRoms: function(roms) {
-        var groupName,
-          optgroup,
-          length,
-          i,
-          count = 0;
+  togglePause: function() {
+    if (this.main.isRunning) {
+      this.main.stop();
+      this.updateStatus('PAUSED');
+      this.updateSoftKeys('RESUME', '', 'LIST');
+    } else {
+      this.main.start();
+      this.updateStatus('');
+      this.updateSoftKeys('PAUSE', '', 'LIST');
+    }
+  },
 
-        this.romSelect.children().remove();
-        $('<option>Select a ROM...</option>').appendTo(this.romSelect);
+  reset: function() {
+    this.canvas.width = 256;
+    this.canvas.height = 192;
+    if (this.log) this.log.textContent = '';
+  },
 
-        for (groupName in roms) {
-          if (roms.hasOwnProperty(groupName)) {
-            optgroup = $('<optgroup></optgroup>').attr('label', groupName);
-            length = roms[groupName].length;
-            i = 0;
-            for (; i < length; i++) {
-              $('<option>' + roms[groupName][i][0] + '</option>')
-                .attr('value', roms[groupName][i][1])
-                .appendTo(optgroup);
-            }
-            optgroup.appendTo(this.romSelect);
-          }
-          count++;
-        }
-        if (count) {
-          this.romSelect.appendTo(this.romContainer);
-        }
-      },
+  updateStatus: function(s) {
+    if(this.log) this.log.textContent = s;
+  },
 
-      loadROM: function() {
-        var self = this;
-
-        this.updateStatus('Downloading...');
-        $.ajax({
-          url: encodeURI(this.romSelect.val()),
-          xhr: function() {
-            var xhr = $.ajaxSettings.xhr();
-            if (xhr.overrideMimeType !== undefined) {
-              // Download as binary
-              xhr.overrideMimeType('text/plain; charset=x-user-defined');
-            }
-            self.xhr = xhr; // ???
-            return xhr;
-          },
-          complete: function(xhr, status) {
-            var data;
-
-            if (status === 'error') {
-              self.updateStatus('The selected ROM file could not be loaded.');
-              return;
-            }
-
-            /*if (JSSMS.Utils.isIE()) {
-             var charCodes = JSNESBinaryToArray(xhr.responseBody).toArray();
-             data = String.fromCharCode.apply(undefined, charCodes);
-             } else {*/
-            data = xhr.responseText;
-            //}
-
-            self.main.stop();
-            self.main.readRomDirectly(data, self.romSelect.val());
-            self.main.reset();
-            self.main.vdp.forceFullRedraw();
-            self.enable();
-          },
-        });
-      },
-
-      /**
-       * Enable and reset UI elements.
-       */
-      enable: function() {
-        /*this.buttons.pause.removeAttr('disabled');
-         if (this.main.isRunning) {
-         this.buttons.pause.attr('value', 'pause');
-         } else {
-         this.buttons.pause.attr('value', 'resume');
-         }*/
-        this.buttons.start.removeAttr('disabled');
-        this.buttons.start.attr('value', 'Start');
-        this.buttons.reset.removeAttr('disabled');
-        if (ENABLE_DEBUGGER) {
-          this.buttons.nextStep.removeAttr('disabled');
-        }
-        if (this.main.soundEnabled) {
-          if (this.buttons.sound) {
-            this.buttons.sound.attr('value', 'Disable sound');
-          } else {
-            this.buttons.sound.attr('value', 'Enable sound');
-          }
-        }
-      },
-
-      /**
-       * Update the message. Used mainly for displaying frame rate.
-       *
-       * @param {string} s The message to display.
-       */
-      updateStatus: function(s) {
-        this.log.text(s);
-      },
-
-      /**
-       * @param {Array.<number>} buffer
-       */
-      writeAudio: function(buffer) {
+  writeAudio: function(buffer) {
+    if (this.main.audioContext) {
         var source = this.main.audioContext.createBufferSource();
         source.buffer = buffer;
         source.connect(this.main.audioContext.destination);
         source.start();
-      },
+    }
+  },
 
-      /**
-       * Update the canvas screen. ATM, prevBuffer is not used. See JSNES for
-       * an implementation of differential update.
-       */
-      writeFrame: (function() {
-        /**
-         * Contains the visibility API prefix or false if not supported.
-         * @type {string|boolean}
-         */
-        var hiddenPrefix = JSSMS.Utils.getPrefix([
-          'hidden',
-          'mozHidden',
-          'webkitHidden',
-          'msHidden',
-        ]);
+  writeFrame: function() {
+    this.canvasContext.putImageData(this.canvasImageData, 0, 0);
+  },
 
-        if (hiddenPrefix) {
-          // If browser supports visibility API and this page is hidden, we exit.
-          return function() {
-            if (document[hiddenPrefix]) {
-              return;
-            }
+  updateDisassembly: function() {},
 
-            this.canvasContext.putImageData(this.canvasImageData, 0, 0);
-          };
-        } else {
-          return function() {
-            this.canvasContext.putImageData(this.canvasImageData, 0, 0);
-          };
-        }
-      })(),
-
-      /**
-       * A function called at each cpu instruction and display information relative to debug.
-       * \@todo If currentAddress is not in this.main.cpu.instructions, then start parsing from it.
-       */
-      updateDisassembly: function(currentAddress) {
-        var startAddress = currentAddress < 8 ? 0 : currentAddress - 8;
-        var instructions = this.main.cpu.instructions;
-        var length = instructions.length;
-        var html = '';
-        var i = startAddress;
-        var num = 0;
-
-        for (; num < 16 && i <= length; i++) {
-          if (instructions[i]) {
-            html +=
-              '<div' +
-              (instructions[i].address === currentAddress
-                ? ' class="current"'
-                : '') +
-              '>' +
-              instructions[i].hexAddress +
-              (instructions[i].isJumpTarget ? ':' : ' ') +
-              '<code>' +
-              instructions[i].inst +
-              '</code></div>';
-
-            num++;
-          }
-        }
-
-        this.dissambler.html(html);
-      },
-    };
-
-    return UI;
-  };
-}
+  requestAnimationFrame: (function() {
+    return window.requestAnimationFrame ||
+           function(callback) { window.setTimeout(callback, 1000 / 60); };
+  })().bind(window)
+};
