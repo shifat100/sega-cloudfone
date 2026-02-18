@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>jsSMS KaiOS - Sega Master System &amp; Game Gear Emulator</title>
-<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+<title>jsSMS KaiOS</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+<!-- Content Security Policy compatible with KaiOS requirements -->
 <meta http-equiv="Content-Security-Policy"
 content="
   default-src 'self' https: data: blob:;
@@ -13,154 +14,265 @@ content="
   frame-src https:;
   connect-src https:;
 ">
-<link rel="stylesheet" href="css/kaios-style.css"> <!-- Optional: for further styling -->
+<!-- Link to external CSS if you have it, but we override below -->
+<link rel="stylesheet" href="css/kaios-style.css"> 
+
 <style>
-/* Basic KaiOS-like styling */
-  *:focus {
-  background: #005fcc;
-  color: white;
+/* =========================================
+   GLOBAL RESET & BASE STYLES
+   ========================================= */
+* {
+    box-sizing: border-box; /* Crucial for small layouts */
+    outline: none;
 }
+
 body {
-  margin: 0;
-  padding: 0;
-  background-color: #000;
-  color: #fff;
-  font-family: 'Open Sans', sans-serif; /* Standard KaiOS font */
-  overflow: hidden;
+    margin: 0;
+    padding: 0;
+    background-color: #000;
+    color: #fff;
+    font-family: 'Open Sans', sans-serif, sans-serif;
+    overflow: hidden;
+    font-size: 14px; /* Base size */
+}
+
+/* KaiOS Focus State */
+*:focus {
+    background: #005fcc;
+    color: white;
 }
 
 .container {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  justify-content: space-between;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    width: 100vw;
+    justify-content: space-between;
 }
 
+/* =========================================
+   EMULATOR SCREEN AREA
+   ========================================= */
 #emulator {
-  flex-grow: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  overflow: hidden;
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center; /* Center canvas vertically */
+    align-items: center;     /* Center canvas horizontally */
+    overflow: hidden;
+    position: relative;
+    width: 100%;
 }
 
 #screen {
-  background: #000;
-  width: 256px;
-  height: 192px;
-  max-width: 100%;
-  max-height: calc(100vh - 80px); /* Adjust based on softkey bar height */
-  display: none; /* Hide initially, show ROM list first */
-  image-rendering: pixelated; /* Crisp pixels for retro look */
-  -ms-interpolation-mode: nearest-neighbor;
+    background: #000;
+    /* Responsive resizing logic */
+    width: 100%; 
+    height: auto;
+    
+    /* Ensure aspect ratio implies 4:3 roughly, but fit to screen */
+    max-width: 100%;
+    max-height: 100%;
+    
+    display: none; /* Hidden by default */
+    
+    image-rendering: pixelated; 
+    image-rendering: -moz-crisp-edges;
+    -ms-interpolation-mode: nearest-neighbor;
 }
 
 #screen canvas {
-  width: 100%;
-  height: 100%;
-  display: block;
+    width: 100%;
+    height: 100%;
+    display: block;
 }
 
-#status {
-  text-align: center;
-  padding: 5px;
-  min-height: 20px;
-  font-size: 0.8em;
-  color: #aaa;
-}
-
-/* ROM List Container */
+/* =========================================
+   ROM LIST UI
+   ========================================= */
 #rom-list-container {
     width: 100%;
     height: 100%;
-    display: flex; /* Initially shown */
+    display: flex;
     flex-direction: column;
+    background-color: #111;
 }
 
 #search-box {
+    flex-shrink: 0; /* Don't shrink */
     width: 100%;
-    padding: 5px;
-    box-sizing: border-box;
+    padding: 2px;
+    background-color: #222;
 }
 
 #search-input {
     width: 100%;
-    padding: 8px;
+    padding: 4px 6px;
     font-size: 1em;
-    background-color: #333;
-    color: #fff;
+    background-color: #eee;
+    color: #000;
     border: 1px solid #555;
-    box-sizing: border-box;
+    border-radius: 2px;
 }
 
 #romList {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  width: 100%;
-  flex-grow: 1;
-  overflow-y: scroll;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    width: 100%;
+    flex-grow: 1; /* Take up remaining space */
+    overflow-y: auto;
 }
 
 #romList li {
-  padding: 8px 15px;
-  border-bottom: 1px solid #333;
-  font-size: 1.1em;
-  color: #fff;
+    padding: 5px 8px; /* Tighter padding */
+    border-bottom: 1px solid #333;
+    font-size: 1em;
+    color: #ddd;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis; /* Handle long names on small screens */
 }
 
 #romList li.rom-group-header {
-  background-color: #222;
-  font-weight: bold;
-  color: #eee;
+    background-color: #444;
+    font-weight: bold;
+    color: #fff;
+    padding: 4px 8px;
+    font-size: 0.9em;
 }
 
 #romList li.selected {
-  background-color: #007bff; /* KaiOS highlight blue */
-  color: #fff;
+    background-color: #005fcc;
+    color: #fff;
 }
 
-/* Softkey Bar */
+/* =========================================
+   SOFTKEY BAR
+   ========================================= */
 .softkey-bar {
-  display: flex;
-  justify-content: space-between;
-  padding: 10px;
-  background-color: #1a1a1a;
-  color: #fff;
-  font-size: 1em;
-  text-transform: uppercase;
+    flex-shrink: 0; /* Ensure this always shows */
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: #1a1a1a; /* Dark Grey */
+    border-top: 1px solid #333;
+    color: #fff;
+    font-weight: 600;
+    text-transform: uppercase;
+    z-index: 100;
 }
 
 .softkey {
-  flex: 1;
+    flex: 1;
+    padding: 0 4px;
+    white-space: nowrap;
+    overflow: hidden;
 }
+
 .softkey-left { text-align: left; }
-.softkey-center { text-align: center; }
+.softkey-center { text-align: center; font-weight: 800; }
 .softkey-right { text-align: right; }
+
+/* =========================================
+   MEDIA QUERIES (Resolution Targeting)
+   ========================================= */
+
+/* ----------------------------------
+   TARGET: 128x160 px (Small Feature Phones)
+   ---------------------------------- */
+@media screen and (max-width: 176px) {
+    body {
+        font-size: 11px; /* Smaller font base */
+    }
+
+    #search-input {
+        padding: 2px 4px;
+        font-size: 11px;
+    }
+
+    #romList li {
+        padding: 3px 4px; /* Very tight vertical spacing */
+        height: 20px;     /* Predictable height for scrolling */
+        line-height: 14px;
+    }
+
+    .softkey-bar {
+        height: 20px; /* Minimal height */
+        font-size: 10px;
+        padding: 0 2px;
+    }
+
+    /* Adjust screen centering */
+    #screen {
+        /* On very narrow screens, ensure width is maxed */
+        width: 100%;
+    }
+}
+
+/* ----------------------------------
+   TARGET: 240x320 px (Standard KaiOS QVGA)
+   ---------------------------------- */
+@media screen and (min-width: 240px) {
+    body {
+        font-size: 14px;
+    }
+
+    #search-input {
+        padding: 5px;
+        font-size: 14px;
+    }
+
+    #romList li {
+        padding: 8px 10px;
+        font-size: 16px; /* Larger text for better readability */
+    }
+
+    .softkey-bar {
+        height: 30px;
+        font-size: 12px;
+        padding: 0 5px;
+    }
+}
 </style>
 </head>
 <body>
+
 <div class="container">
+  
   <div id="emulator">
-    <!-- Screen will be created by JS and added here -->
-    <!-- ROM List and Search box are now static in the HTML -->
+    <!-- Screen canvas is injected here by jsSMS -->
+    <div id="screen"></div>
+
+    <!-- ROM List Container -->
     <div id="rom-list-container">
         <div id="search-box">
-            <input type="text" id="search-input" placeholder="Search ROMs...">
+            <!-- tabindex="1" ensures it's navigable via d-pad -->
+            <input type="text" id="search-input" placeholder="Search..." tabindex="1">
         </div>
-        <!-- The ROM list (ul) will be created by JS and added inside this container -->
+        <!-- The ROM list (ul) injected by JS -->
+        <ul id="romList">
+            <!-- Example Static Content for Visualization -->
+            <!-- JS should generate this -->
+            <!--
+            <li class="rom-group-header">Favorites</li>
+            <li class="selected" tabindex="2">Sonic the Hedgehog</li>
+            <li tabindex="3">Alex Kidd in Miracle World</li>
+            <li tabindex="4">Wonder Boy</li>
+            -->
+        </ul>
     </div>
   </div>
 
   <div class="softkey-bar">
-    <div id="softkey-left" class="softkey softkey-left"></div>
-    <div id="softkey-center" class="softkey softkey-center"></div>
-    <div id="softkey-right" class="softkey softkey-right"></div>
+    <div id="softkey-left" class="softkey softkey-left">Menu</div>
+    <div id="softkey-center" class="softkey softkey-center">SELECT</div>
+    <div id="softkey-right" class="softkey softkey-right">Back</div>
   </div>
+
 </div>
 
-<!-- All JSSMS core scripts -->
+<!-- Scripts -->
 <script src="src/setup.js"></script>
 <script src="src/sms.js"></script>
 <script src="src/utils.js"></script>
@@ -169,7 +281,7 @@ body {
 <script src="src/debugger.js"></script>
 <script src="src/vdp.js"></script>
 <script src="src/psg.js"></script>
-<script src="src/ui.js"></script> <!-- Our KaiOS UI -->
+<script src="src/ui.js"></script>
 <script src="src/keyboard.js"></script>
 <script src="src/ports.js"></script>
 <script src="src/compiler/bytecode.js"></script>
@@ -185,7 +297,23 @@ body {
 <script src="src/compiler/recompiler.js"></script>
 <script src="lib/esprima.js"></script>
 <script src="lib/escodegen.browser.js"></script>
-
 <script src="init.js"></script>
+
+<!-- Simple JS logic to toggle visibility for testing layout without the core engine -->
+<script>
+    // Note: In your actual app, ui.js handles this. 
+    // This snippet is just to ensure the layout behaves correctly if the engine isn't loaded yet.
+    const screenEl = document.getElementById('screen');
+    const romListEl = document.getElementById('rom-list-container');
+    
+    // Function to resize canvas aspect ratio manually if CSS object-fit fails on old engines
+    function resizeScreen() {
+        if(screenEl.style.display !== 'none') {
+            // Keep aspect ratio logic here if needed for VDP
+        }
+    }
+    window.addEventListener('resize', resizeScreen);
+</script>
+
 </body>
 </html>
