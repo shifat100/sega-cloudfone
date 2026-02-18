@@ -245,7 +245,7 @@ JSSMS.KaiOSUI.prototype = {
     this.searchInput.focus();
     if (this.currentRomIndex === -1) this.currentRomIndex = 0;
     this.highlightSelectedRom();
-    this.updateSoftKeys('SHARE', 'SELECT', 'OPEN');
+    this.updateSoftKeys('', 'SELECT', 'OPEN');
   },
 
   navigateRomList: function(direction) {
