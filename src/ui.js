@@ -184,7 +184,7 @@ JSSMS.KaiOSUI.prototype = {
 
         case 'SoftRight':
            if (self.romListContainer.style.display !== 'none') {
-            self.openFile();
+            window.close();
            } else {
             self.showRomList(); 
            }
@@ -276,7 +276,7 @@ JSSMS.KaiOSUI.prototype = {
     // Focus search input on load
     this.searchInput.focus();
     
-    this.updateSoftKeys('Search', 'SELECT', 'OPEN');
+    this.updateSoftKeys('Search', 'OK', 'Exit');
   },
 
   // Completely rewritten to use .focus()
