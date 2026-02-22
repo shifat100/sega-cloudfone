@@ -2,7 +2,7 @@
   "name": "JSSMS Kai",
   "description": "Sega Master System Emulator",
   "version": "1.0.0",
-  "launch_path": "/index.html",
+  "launch_path": "./index.html",
   "type": "privileged",
   "csp": "script-src 'self' 'unsafe-eval'; object-src 'none'",
   "permissions": {
@@ -23,8 +23,8 @@
   },
   "default_locale": "en-US",
   "icons": {
-    "56": "/icons/icon-56.png",
-    "112": "/icons/icon-112.png"
+    "56": "./icons/icon.png",
+    "112": "./icons/icon.png"
   },
   "fullscreen": "true"
 }
