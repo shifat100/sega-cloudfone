@@ -1,5 +1,5 @@
 {
-  "name": "JSSMS Kai",
+  "name": "JSSMS",
   "description": "Sega Master System Emulator",
   "version": "1.0.0",
   "launch_path": "./index.html",
